@@ -7,9 +7,15 @@ const router = express.Router();
 router.get('/', (req, res) => {
   const instruments = readJSON('instruments.json', []);
   const users = readJSON('users.json', []);
-  const { category, ownerId, status, keyword, city } = req.query;
+  const { category, ownerId, status, keyword, city, currentUserId } = req.query;
   
   let result = instruments;
+
+  if (currentUserId && !ownerId) {
+    const currentUser = users.find(u => u.id === currentUserId);
+    const blockedIds = currentUser?.blockedUsers || [];
+    result = result.filter(i => !blockedIds.includes(i.ownerId));
+  }
   
   if (category) {
     result = result.filter(i => i.category === category);

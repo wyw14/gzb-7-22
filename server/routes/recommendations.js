@@ -27,7 +27,8 @@ router.get('/buddies/:userId', (req, res) => {
     return res.status(404).json({ error: '用户不存在' });
   }
   
-  const candidates = users.filter(u => u.id !== userId);
+  const blockedIds = currentUser.blockedUsers || [];
+  const candidates = users.filter(u => u.id !== userId && !blockedIds.includes(u.id));
   
   const scored = candidates.map(candidate => {
     let score = 0;
@@ -118,8 +119,9 @@ router.get('/instruments/:userId', (req, res) => {
     return res.status(404).json({ error: '用户不存在' });
   }
   
+  const blockedIds = currentUser.blockedUsers || [];
   const available = instruments.filter(i => 
-    i.ownerId !== userId && i.status === 'available'
+    i.ownerId !== userId && i.status === 'available' && !blockedIds.includes(i.ownerId)
   );
   
   const scored = available.map(inst => {
@@ -187,9 +189,10 @@ router.get('/pieces/:userId', (req, res) => {
   }
   
   const allPieces = new Map();
+  const blockedIds = currentUser.blockedUsers || [];
   
   users.forEach(u => {
-    if (u.id !== userId) {
+    if (u.id !== userId && !blockedIds.includes(u.id)) {
       u.favoritePieces.forEach(p => {
         if (!allPieces.has(p)) {
           allPieces.set(p, { piece: p, likes: 0, players: [], instrument: u.instruments[0] || '' });
@@ -204,7 +207,7 @@ router.get('/pieces/:userId', (req, res) => {
   });
   
   checkins.forEach(c => {
-    if (c.userId !== userId && c.piece) {
+    if (c.userId !== userId && !blockedIds.includes(c.userId) && c.piece) {
       if (!allPieces.has(c.piece)) {
         allPieces.set(c.piece, { piece: c.piece, likes: 0, checkins: 0, players: [], instrument: c.instrument });
       }

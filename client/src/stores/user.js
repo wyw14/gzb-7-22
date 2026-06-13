@@ -8,7 +8,8 @@ export const useUserStore = defineStore('user', {
   }),
 
   getters: {
-    userId: (state) => state.currentUser?.id || null
+    userId: (state) => state.currentUser?.id || null,
+    blockedUserIds: (state) => state.currentUser?.blockedUsers || []
   },
 
   actions: {
@@ -16,6 +17,9 @@ export const useUserStore = defineStore('user', {
       try {
         const result = await userApi.login({ username, phone })
         if (result.success) {
+          if (!result.user.blockedUsers) {
+            result.user.blockedUsers = []
+          }
           this.currentUser = result.user
           this.isLoggedIn = true
           localStorage.setItem('userId', result.user.id)
@@ -31,7 +35,11 @@ export const useUserStore = defineStore('user', {
       const userData = localStorage.getItem('userData')
       if (userData) {
         try {
-          this.currentUser = JSON.parse(userData)
+          const parsed = JSON.parse(userData)
+          if (!parsed.blockedUsers) {
+            parsed.blockedUsers = []
+          }
+          this.currentUser = parsed
           this.isLoggedIn = true
         } catch (e) {
           this.logout()
@@ -43,6 +51,9 @@ export const useUserStore = defineStore('user', {
       if (this.userId) {
         try {
           const user = await userApi.getUser(this.userId)
+          if (!user.blockedUsers) {
+            user.blockedUsers = []
+          }
           this.currentUser = user
           localStorage.setItem('userData', JSON.stringify(user))
         } catch (e) {
@@ -55,11 +66,44 @@ export const useUserStore = defineStore('user', {
       if (this.userId) {
         const result = await userApi.updateUser(this.userId, data)
         if (result.success) {
+          if (!result.user.blockedUsers) {
+            result.user.blockedUsers = []
+          }
           this.currentUser = result.user
           localStorage.setItem('userData', JSON.stringify(result.user))
         }
         return result
       }
+    },
+
+    isBlocked(userId) {
+      return this.blockedUserIds.includes(userId)
+    },
+
+    async blockUser(targetUserId) {
+      if (!this.userId) return null
+      const result = await userApi.blockUser(this.userId, targetUserId)
+      if (result.success) {
+        if (!result.user.blockedUsers) {
+          result.user.blockedUsers = []
+        }
+        this.currentUser = result.user
+        localStorage.setItem('userData', JSON.stringify(result.user))
+      }
+      return result
+    },
+
+    async unblockUser(targetUserId) {
+      if (!this.userId) return null
+      const result = await userApi.unblockUser(this.userId, targetUserId)
+      if (result.success) {
+        if (!result.user.blockedUsers) {
+          result.user.blockedUsers = []
+        }
+        this.currentUser = result.user
+        localStorage.setItem('userData', JSON.stringify(result.user))
+      }
+      return result
     },
 
     logout() {

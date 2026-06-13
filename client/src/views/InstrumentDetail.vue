@@ -52,6 +52,20 @@
                 <el-icon><ChatDotRound /></el-icon>
                 邀约主人练琴
               </el-button>
+              <el-dropdown trigger="click" @command="handleInstAction" v-if="userStore.isLoggedIn && !isOwner">
+                <el-button size="large">
+                  <el-icon><MoreFilled /></el-icon>
+                  更多
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="report">
+                      <el-icon><Warning /></el-icon>
+                      举报该乐器
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
             </div>
           </div>
           
@@ -86,6 +100,27 @@
                 <router-link :to="`/buddies/${instrument.owner.id}`">
                   <el-button>查看主页</el-button>
                 </router-link>
+                <el-dropdown trigger="click" @command="handleOwnerAction" v-if="userStore.isLoggedIn && instrument.owner.id !== userStore.userId">
+                  <el-button>
+                    <el-icon><MoreFilled /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="report">
+                        <el-icon><Warning /></el-icon>
+                        举报该用户
+                      </el-dropdown-item>
+                      <el-dropdown-item v-if="!isOwnerBlocked" command="block" divided>
+                        <el-icon><CircleClose /></el-icon>
+                        屏蔽该用户
+                      </el-dropdown-item>
+                      <el-dropdown-item v-else command="unblock">
+                        <el-icon><Select /></el-icon>
+                        取消屏蔽
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
             </div>
           </div>
@@ -102,6 +137,17 @@
                 <span class="reviewer">{{ r.reviewer?.username }}</span>
                 <el-rate v-model="r.rating" disabled size="small" />
                 <span class="badge badge-primary">{{ r.context }}</span>
+                <el-dropdown trigger="click" @command="(cmd) => handleReviewAction(cmd, r)" v-if="userStore.isLoggedIn && r.reviewerId !== userStore.userId">
+                  <span class="report-link">
+                    <el-icon><Warning /></el-icon>
+                    举报
+                  </span>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="report">举报该评价</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
               <p class="review-text">{{ r.content }}</p>
               <span class="review-time">{{ new Date(r.createdAt).toLocaleDateString() }}</span>
@@ -167,6 +213,23 @@
         <el-button type="primary" :loading="submitting" @click="submitInvite">发送邀约</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showReport" :title="reportDialogTitle" width="500px">
+      <el-form :model="reportForm" label-width="80px">
+        <el-form-item label="举报原因">
+          <el-select v-model="reportForm.reason" style="width: 100%">
+            <el-option v-for="r in reportReasonOptions" :key="r" :label="r" :value="r" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="补充说明">
+          <el-input v-model="reportForm.description" type="textarea" :rows="4" placeholder="请描述具体情况（选填）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showReport = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitReport">提交举报</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -174,9 +237,9 @@
 import { ref, reactive, computed, onMounted, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
-import { instrumentApi, borrowApi, invitationApi, reviewApi } from '../api'
+import { instrumentApi, borrowApi, invitationApi, reviewApi, reportApi } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Goods, Medal, Location, Wallet, ChatDotRound, Document, User, Star, ChatLineSquare } from '@element-plus/icons-vue'
+import { Goods, Medal, Location, Wallet, ChatDotRound, Document, User, Star, ChatLineSquare, Warning, CircleClose, Select, MoreFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -187,7 +250,24 @@ const instrument = ref(null)
 const ownerReviews = ref([])
 const showBorrow = ref(false)
 const showInvite = ref(false)
+const showReport = ref(false)
 const submitting = ref(false)
+const reportTarget = reactive({ type: '', id: '' })
+const reportReasonOptions = ref([])
+
+const reportForm = reactive({
+  reason: '',
+  description: ''
+})
+
+const reportDialogTitle = computed(() => {
+  if (reportTarget.type === 'instrument') return '举报乐器'
+  if (reportTarget.type === 'user') return '举报用户'
+  if (reportTarget.type === 'review') return '举报评价'
+  return '举报'
+})
+
+const isOwnerBlocked = computed(() => userStore.isBlocked(instrument.value?.ownerId))
 
 const borrowForm = reactive({
   dates: null,
@@ -286,6 +366,81 @@ const submitInvite = async () => {
     router.push('/messages')
   } catch (e) {
     ElMessage.error('提交失败')
+  } finally {
+    submitting.value = false
+  }
+}
+
+const handleInstAction = (command) => {
+  if (command === 'report') {
+    openReportDialog('instrument', instrument.value.id)
+  }
+}
+
+const handleOwnerAction = async (command) => {
+  if (command === 'report') {
+    openReportDialog('user', instrument.value.ownerId)
+  } else if (command === 'block') {
+    try {
+      await ElMessageBox.confirm(
+        `确定要屏蔽「${instrument.value.owner?.username}」吗？屏蔽后将不再看到TA的相关内容。`,
+        '确认屏蔽',
+        { type: 'warning' }
+      )
+      await userStore.blockUser(instrument.value.ownerId)
+      ElMessage.success('已屏蔽该用户')
+      router.push('/instruments')
+    } catch (e) {
+      if (e !== 'cancel') ElMessage.error('操作失败')
+    }
+  } else if (command === 'unblock') {
+    await userStore.unblockUser(instrument.value.ownerId)
+    ElMessage.success('已取消屏蔽')
+  }
+}
+
+const handleReviewAction = (command, review) => {
+  if (command === 'report') {
+    openReportDialog('review', review.id)
+  }
+}
+
+const openReportDialog = async (type, id) => {
+  if (!userStore.isLoggedIn) {
+    requireLogin()
+    return
+  }
+  reportTarget.type = type
+  reportTarget.id = id
+  reportForm.reason = ''
+  reportForm.description = ''
+  try {
+    const types = await reportApi.getTypes()
+    reportReasonOptions.value = types[type] || []
+  } catch (e) {
+    reportReasonOptions.value = ['其他违规']
+  }
+  showReport.value = true
+}
+
+const submitReport = async () => {
+  if (!reportForm.reason) {
+    ElMessage.warning('请选择举报原因')
+    return
+  }
+  submitting.value = true
+  try {
+    await reportApi.create({
+      reporterId: userStore.userId,
+      targetType: reportTarget.type,
+      targetId: reportTarget.id,
+      reason: reportForm.reason,
+      description: reportForm.description
+    })
+    ElMessage.success('举报已提交，我们会尽快处理')
+    showReport.value = false
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.error || '提交失败')
   } finally {
     submitting.value = false
   }
@@ -520,6 +675,20 @@ const submitInvite = async () => {
 .review-time {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.report-link {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.report-link:hover {
+  color: var(--danger-color);
 }
 
 .text-danger {

@@ -32,6 +32,27 @@
                       <el-tag v-if="b.ownerReviewed" type="success" size="small">您已评价</el-tag>
                       <el-tag v-if="b.borrowerReviewed" type="info" size="small">对方已评价</el-tag>
                     </span>
+                    <el-dropdown trigger="click" @command="(cmd) => handleMsgAction(cmd, 'borrow', b)" v-if="b.borrowerId !== userStore.userId" class="msg-dropdown">
+                      <span class="more-link">
+                        <el-icon><MoreFilled /></el-icon>
+                      </span>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="report">
+                            <el-icon><Warning /></el-icon>
+                            举报异常借用
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="!userStore.isBlocked(b.borrowerId)" command="block" divided>
+                            <el-icon><CircleClose /></el-icon>
+                            屏蔽该用户
+                          </el-dropdown-item>
+                          <el-dropdown-item v-else command="unblock">
+                            <el-icon><Select /></el-icon>
+                            取消屏蔽
+                          </el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
                   </div>
                   <div class="msg-meta">
                     <span><el-icon><Calendar /></el-icon> {{ b.startDate }} 至 {{ b.endDate }}</span>
@@ -86,6 +107,27 @@
                       <el-tag v-if="b.borrowerReviewed" type="success" size="small">您已评价</el-tag>
                       <el-tag v-if="b.ownerReviewed" type="info" size="small">主人已评价</el-tag>
                     </span>
+                    <el-dropdown trigger="click" @command="(cmd) => handleMsgAction(cmd, 'borrow', b)" class="msg-dropdown">
+                      <span class="more-link">
+                        <el-icon><MoreFilled /></el-icon>
+                      </span>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="report">
+                            <el-icon><Warning /></el-icon>
+                            举报异常借用
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="!userStore.isBlocked(b.ownerId)" command="block" divided>
+                            <el-icon><CircleClose /></el-icon>
+                            屏蔽该用户
+                          </el-dropdown-item>
+                          <el-dropdown-item v-else command="unblock">
+                            <el-icon><Select /></el-icon>
+                            取消屏蔽
+                          </el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
                   </div>
                   <div class="msg-meta">
                     <span><el-icon><Calendar /></el-icon> {{ b.startDate }} 至 {{ b.endDate }}</span>
@@ -133,6 +175,27 @@
                       <el-tag v-if="inv.inviteeReviewed" type="success" size="small">您已评价</el-tag>
                       <el-tag v-if="inv.inviterReviewed" type="info" size="small">对方已评价</el-tag>
                     </span>
+                    <el-dropdown trigger="click" @command="(cmd) => handleMsgAction(cmd, 'invitation', inv)" class="msg-dropdown">
+                      <span class="more-link">
+                        <el-icon><MoreFilled /></el-icon>
+                      </span>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="report">
+                            <el-icon><Warning /></el-icon>
+                            举报爽约搭子
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="!userStore.isBlocked(inv.inviterId)" command="block" divided>
+                            <el-icon><CircleClose /></el-icon>
+                            屏蔽该用户
+                          </el-dropdown-item>
+                          <el-dropdown-item v-else command="unblock">
+                            <el-icon><Select /></el-icon>
+                            取消屏蔽
+                          </el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
                   </div>
                   <div class="msg-meta">
                     <span><el-icon><MagicStick /></el-icon> {{ inv.instrument }}</span>
@@ -187,6 +250,27 @@
                       <el-tag v-if="inv.inviterReviewed" type="success" size="small">您已评价</el-tag>
                       <el-tag v-if="inv.inviteeReviewed" type="info" size="small">对方已评价</el-tag>
                     </span>
+                    <el-dropdown trigger="click" @command="(cmd) => handleMsgAction(cmd, 'invitation', inv)" class="msg-dropdown">
+                      <span class="more-link">
+                        <el-icon><MoreFilled /></el-icon>
+                      </span>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="report">
+                            <el-icon><Warning /></el-icon>
+                            举报爽约搭子
+                          </el-dropdown-item>
+                          <el-dropdown-item v-if="!userStore.isBlocked(inv.inviteeId)" command="block" divided>
+                            <el-icon><CircleClose /></el-icon>
+                            屏蔽该用户
+                          </el-dropdown-item>
+                          <el-dropdown-item v-else command="unblock">
+                            <el-icon><Select /></el-icon>
+                            取消屏蔽
+                          </el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
                   </div>
                   <div class="msg-meta">
                     <span><el-icon><MagicStick /></el-icon> {{ inv.instrument }}</span>
@@ -242,15 +326,32 @@
         <el-button type="primary" :loading="submitting" @click="submitReview">提交评价</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showReport" :title="reportDialogTitle" width="500px">
+      <el-form :model="reportForm" label-width="80px">
+        <el-form-item label="举报原因">
+          <el-select v-model="reportForm.reason" style="width: 100%">
+            <el-option v-for="r in reportReasonOptions" :key="r" :label="r" :value="r" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="补充说明">
+          <el-input v-model="reportForm.description" type="textarea" :rows="4" placeholder="请描述具体情况（选填）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showReport = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitReport">提交举报</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useUserStore } from '../stores/user'
-import { borrowApi, invitationApi, reviewApi } from '../api'
+import { borrowApi, invitationApi, reviewApi, reportApi } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Goods, User, Calendar, Wallet, CircleCheck, CircleClose, MagicStick, Notebook, Location, Edit } from '@element-plus/icons-vue'
+import { Goods, User, Calendar, Wallet, CircleCheck, CircleClose, MagicStick, Notebook, Location, Edit, Warning, Select, MoreFilled } from '@element-plus/icons-vue'
 
 const userStore = useUserStore()
 
@@ -258,9 +359,23 @@ const activeTab = ref('0')
 const borrows = ref([])
 const invitations = ref([])
 const showReview = ref(false)
+const showReport = ref(false)
 const submitting = ref(false)
 
 const currentTarget = ref(null)
+const reportTarget = reactive({ type: '', id: '', userId: '', userName: '' })
+const reportReasonOptions = ref([])
+
+const reportForm = reactive({
+  reason: '',
+  description: ''
+})
+
+const reportDialogTitle = computed(() => {
+  if (reportTarget.type === 'borrow') return '举报异常借用行为'
+  if (reportTarget.type === 'invitation') return '举报爽约搭子'
+  return '举报'
+})
 
 const reviewForm = reactive({
   title: '评价',
@@ -454,6 +569,80 @@ const submitReview = async () => {
     submitting.value = false
   }
 }
+
+const handleMsgAction = async (command, type, item) => {
+  if (command === 'report') {
+    openReportDialog(type, item)
+  } else if (command === 'block') {
+    const targetUserId = type === 'borrow'
+      ? (item.borrowerId === userStore.userId ? item.ownerId : item.borrowerId)
+      : (item.inviterId === userStore.userId ? item.inviteeId : item.inviterId)
+    const targetUserName = type === 'borrow'
+      ? (item.borrowerId === userStore.userId ? item.owner?.username : item.borrower?.username)
+      : (item.inviterId === userStore.userId ? item.invitee?.username : item.inviter?.username)
+    try {
+      await ElMessageBox.confirm(
+        `确定要屏蔽「${targetUserName}」吗？屏蔽后将不再看到TA的相关内容。`,
+        '确认屏蔽',
+        { type: 'warning' }
+      )
+      await userStore.blockUser(targetUserId)
+      ElMessage.success('已屏蔽该用户')
+      await loadAll()
+    } catch (e) {
+      if (e !== 'cancel') ElMessage.error('操作失败')
+    }
+  } else if (command === 'unblock') {
+    const targetUserId = type === 'borrow'
+      ? (item.borrowerId === userStore.userId ? item.ownerId : item.borrowerId)
+      : (item.inviterId === userStore.userId ? item.inviteeId : item.inviterId)
+    await userStore.unblockUser(targetUserId)
+    ElMessage.success('已取消屏蔽')
+  }
+}
+
+const openReportDialog = async (type, item) => {
+  reportTarget.type = type
+  reportTarget.id = item.id
+  reportTarget.userId = type === 'borrow'
+    ? (item.borrowerId === userStore.userId ? item.ownerId : item.borrowerId)
+    : (item.inviterId === userStore.userId ? item.inviteeId : item.inviterId)
+  reportTarget.userName = type === 'borrow'
+    ? (item.borrowerId === userStore.userId ? item.owner?.username : item.borrower?.username)
+    : (item.inviterId === userStore.userId ? item.invitee?.username : item.inviter?.username)
+  reportForm.reason = ''
+  reportForm.description = ''
+  try {
+    const types = await reportApi.getTypes()
+    reportReasonOptions.value = types[type] || []
+  } catch (e) {
+    reportReasonOptions.value = ['其他违规']
+  }
+  showReport.value = true
+}
+
+const submitReport = async () => {
+  if (!reportForm.reason) {
+    ElMessage.warning('请选择举报原因')
+    return
+  }
+  submitting.value = true
+  try {
+    await reportApi.create({
+      reporterId: userStore.userId,
+      targetType: reportTarget.type,
+      targetId: reportTarget.id,
+      reason: reportForm.reason,
+      description: reportForm.description
+    })
+    ElMessage.success('举报已提交，我们会尽快处理')
+    showReport.value = false
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.error || '提交失败')
+  } finally {
+    submitting.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -574,5 +763,23 @@ const submitReview = async () => {
 
 .empty-state.small .el-icon {
   font-size: 48px;
+}
+
+.msg-dropdown {
+  margin-left: auto;
+}
+
+.more-link {
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.more-link:hover {
+  background: var(--bg-light);
+  color: var(--primary-color);
 }
 </style>

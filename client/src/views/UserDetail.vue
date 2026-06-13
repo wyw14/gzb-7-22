@@ -36,6 +36,28 @@
                 TA的闲置乐器 ({{ userInstruments.length }})
               </el-button>
             </router-link>
+            <el-dropdown trigger="click" @command="handleUserAction">
+              <el-button size="large">
+                <el-icon><MoreFilled /></el-icon>
+                更多
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="report">
+                    <el-icon><Warning /></el-icon>
+                    举报该用户
+                  </el-dropdown-item>
+                  <el-dropdown-item v-if="!isBlocked" command="block" divided>
+                    <el-icon><CircleClose /></el-icon>
+                    屏蔽该用户
+                  </el-dropdown-item>
+                  <el-dropdown-item v-else command="unblock">
+                    <el-icon><Select /></el-icon>
+                    取消屏蔽
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </div>
       </div>
@@ -126,6 +148,17 @@
                     <span class="reviewer">{{ r.reviewer?.username }}</span>
                     <el-rate v-model="r.rating" disabled size="small" />
                     <span class="badge badge-primary">{{ r.context }}</span>
+                    <el-dropdown trigger="click" @command="(cmd) => handleReviewAction(cmd, r)" v-if="userStore.isLoggedIn && r.reviewerId !== userStore.userId">
+                      <span class="report-link">
+                        <el-icon><Warning /></el-icon>
+                        举报
+                      </span>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="report">举报该评价</el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
                   </div>
                   <p>{{ r.content }}</p>
                   <span class="time">{{ new Date(r.createdAt).toLocaleDateString() }}</span>
@@ -196,6 +229,23 @@
         <el-button type="primary" :loading="submitting" @click="submitReview">提交评价</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showReport" :title="reportDialogTitle" width="500px">
+      <el-form :model="reportForm" label-width="80px">
+        <el-form-item label="举报原因">
+          <el-select v-model="reportForm.reason" style="width: 100%">
+            <el-option v-for="r in reportReasonOptions" :key="r" :label="r" :value="r" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="补充说明">
+          <el-input v-model="reportForm.description" type="textarea" :rows="4" placeholder="请描述具体情况（选填）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showReport = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="submitReport">提交举报</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -203,10 +253,10 @@
 import { ref, reactive, computed, onMounted, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
-import { userApi, instrumentApi, checkinApi, reviewApi, invitationApi, borrowApi } from '../api'
+import { userApi, instrumentApi, checkinApi, reviewApi, invitationApi, borrowApi, reportApi } from '../api'
 import CheckinCard from '../components/CheckinCard.vue'
-import { ElMessage } from 'element-plus'
-import { Location, ChatDotRound, Goods, MagicStick, Notebook, Clock, DataLine, Document, ChatLineSquare, Edit } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Location, ChatDotRound, Goods, MagicStick, Notebook, Clock, DataLine, Document, ChatLineSquare, Edit, Warning, CircleClose, Select, MoreFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -221,7 +271,23 @@ const reviews = ref([])
 const canReview = ref(false)
 const showInvite = ref(false)
 const showReview = ref(false)
+const showReport = ref(false)
 const submitting = ref(false)
+const reportTarget = reactive({ type: '', id: '' })
+const reportReasonOptions = ref([])
+
+const reportForm = reactive({
+  reason: '',
+  description: ''
+})
+
+const reportDialogTitle = computed(() => {
+  if (reportTarget.type === 'user') return '举报用户'
+  if (reportTarget.type === 'review') return '举报评价'
+  return '举报'
+})
+
+const isBlocked = computed(() => userStore.isBlocked(user.value?.id))
 
 const inviteForm = reactive({
   instrument: '',
@@ -261,14 +327,16 @@ onMounted(async () => {
   try {
     user.value = await userApi.getUser(route.params.id)
     
-    const [cks, insts, revs] = await Promise.all([
+    const [cks, insts, revs, types] = await Promise.all([
       checkinApi.list({ userId: user.value.id }),
       instrumentApi.list({ ownerId: user.value.id }),
-      reviewApi.list({ revieweeId: user.value.id, targetType: 'user' })
+      reviewApi.list({ revieweeId: user.value.id, targetType: 'user' }),
+      reportApi.getTypes()
     ])
     userCheckins.value = cks.slice(0, 5)
     userInstruments.value = insts
     reviews.value = revs
+    reportReasonOptions.value = []
     
     try {
       stats.value = await checkinApi.stats(user.value.id)
@@ -292,6 +360,75 @@ onMounted(async () => {
     ElMessage.error('加载失败')
   }
 })
+
+const handleUserAction = async (command) => {
+  if (command === 'report') {
+    openReportDialog('user', user.value.id)
+  } else if (command === 'block') {
+    try {
+      await ElMessageBox.confirm(
+        `确定要屏蔽「${user.value.username}」吗？屏蔽后将不再看到TA的相关内容。`,
+        '确认屏蔽',
+        { type: 'warning' }
+      )
+      await userStore.blockUser(user.value.id)
+      ElMessage.success('已屏蔽该用户')
+      router.push('/buddies')
+    } catch (e) {
+      if (e !== 'cancel') ElMessage.error('操作失败')
+    }
+  } else if (command === 'unblock') {
+    await userStore.unblockUser(user.value.id)
+    ElMessage.success('已取消屏蔽')
+  }
+}
+
+const handleReviewAction = (command, review) => {
+  if (command === 'report') {
+    openReportDialog('review', review.id)
+  }
+}
+
+const openReportDialog = async (type, id) => {
+  if (!userStore.isLoggedIn) {
+    requireLogin()
+    return
+  }
+  reportTarget.type = type
+  reportTarget.id = id
+  reportForm.reason = ''
+  reportForm.description = ''
+  try {
+    const types = await reportApi.getTypes()
+    reportReasonOptions.value = types[type] || []
+  } catch (e) {
+    reportReasonOptions.value = ['其他违规']
+  }
+  showReport.value = true
+}
+
+const submitReport = async () => {
+  if (!reportForm.reason) {
+    ElMessage.warning('请选择举报原因')
+    return
+  }
+  submitting.value = true
+  try {
+    await reportApi.create({
+      reporterId: userStore.userId,
+      targetType: reportTarget.type,
+      targetId: reportTarget.id,
+      reason: reportForm.reason,
+      description: reportForm.description
+    })
+    ElMessage.success('举报已提交，我们会尽快处理')
+    showReport.value = false
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.error || '提交失败')
+  } finally {
+    submitting.value = false
+  }
+}
 
 const submitInvite = async () => {
   if (!userStore.isLoggedIn) {
@@ -583,6 +720,20 @@ const submitReview = async () => {
 .time {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+.report-link {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.report-link:hover {
+  color: var(--danger-color);
 }
 
 .empty-state.small {

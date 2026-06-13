@@ -6,9 +6,15 @@ const router = express.Router();
 
 router.get('/', (req, res) => {
   const users = readJSON('users.json', []);
-  const { skillLevel, instrument, city, keyword } = req.query;
+  const { skillLevel, instrument, city, keyword, currentUserId } = req.query;
   
   let result = users;
+
+  if (currentUserId) {
+    const currentUser = users.find(u => u.id === currentUserId);
+    const blockedIds = currentUser?.blockedUsers || [];
+    result = result.filter(u => !blockedIds.includes(u.id) && u.id !== currentUserId);
+  }
   
   if (skillLevel) {
     result = result.filter(u => u.skillLevel === skillLevel);
@@ -29,6 +35,73 @@ router.get('/', (req, res) => {
   }
   
   res.json(result);
+});
+
+router.get('/:id/blocked', (req, res) => {
+  const users = readJSON('users.json', []);
+  const currentUser = users.find(u => u.id === req.params.id);
+  if (!currentUser) {
+    return res.status(404).json({ error: '用户不存在' });
+  }
+  const blockedIds = currentUser.blockedUsers || [];
+  const blockedUsers = users.filter(u => blockedIds.includes(u.id));
+  res.json(blockedUsers);
+});
+
+router.post('/:id/block', (req, res) => {
+  const users = readJSON('users.json', []);
+  const { blockedUserId } = req.body;
+  const idx = users.findIndex(u => u.id === req.params.id);
+  
+  if (idx === -1) {
+    return res.status(404).json({ success: false, error: '用户不存在' });
+  }
+  if (!blockedUserId || blockedUserId === req.params.id) {
+    return res.status(400).json({ success: false, error: '无效的屏蔽用户ID' });
+  }
+  const targetUser = users.find(u => u.id === blockedUserId);
+  if (!targetUser) {
+    return res.status(404).json({ success: false, error: '被屏蔽用户不存在' });
+  }
+
+  if (!users[idx].blockedUsers) {
+    users[idx].blockedUsers = [];
+  }
+  if (users[idx].blockedUsers.includes(blockedUserId)) {
+    return res.json({ success: true, alreadyBlocked: true, user: users[idx] });
+  }
+
+  users[idx].blockedUsers.push(blockedUserId);
+  writeJSON('users.json', users);
+
+  res.json({ success: true, user: users[idx] });
+});
+
+router.delete('/:id/block/:blockedUserId', (req, res) => {
+  const users = readJSON('users.json', []);
+  const idx = users.findIndex(u => u.id === req.params.id);
+  
+  if (idx === -1) {
+    return res.status(404).json({ success: false, error: '用户不存在' });
+  }
+
+  if (!users[idx].blockedUsers) {
+    users[idx].blockedUsers = [];
+  }
+  users[idx].blockedUsers = users[idx].blockedUsers.filter(id => id !== req.params.blockedUserId);
+  writeJSON('users.json', users);
+
+  res.json({ success: true, user: users[idx] });
+});
+
+router.get('/:id/block-status/:targetUserId', (req, res) => {
+  const users = readJSON('users.json', []);
+  const currentUser = users.find(u => u.id === req.params.id);
+  if (!currentUser) {
+    return res.status(404).json({ error: '用户不存在' });
+  }
+  const isBlocked = (currentUser.blockedUsers || []).includes(req.params.targetUserId);
+  res.json({ isBlocked });
 });
 
 router.get('/:id', (req, res) => {
@@ -63,6 +136,7 @@ router.post('/login', (req, res) => {
       freeTimes: [],
       rating: 5.0,
       reviewCount: 0,
+      blockedUsers: [],
       createdAt: new Date().toISOString()
     };
     users.push(user);

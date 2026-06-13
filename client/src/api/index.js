@@ -25,7 +25,11 @@ export const userApi = {
   login: (data) => api.post('/users/login', data),
   getUser: (id) => api.get(`/users/${id}`),
   updateUser: (id, data) => api.put(`/users/${id}`, data),
-  listUsers: (params) => api.get('/users', { params })
+  listUsers: (params) => api.get('/users', { params }),
+  blockUser: (userId, blockedUserId) => api.post(`/users/${userId}/block`, { blockedUserId }),
+  unblockUser: (userId, blockedUserId) => api.delete(`/users/${userId}/block/${blockedUserId}`),
+  getBlockedUsers: (userId) => api.get(`/users/${userId}/blocked`),
+  getBlockStatus: (userId, targetUserId) => api.get(`/users/${userId}/block-status/${targetUserId}`)
 }
 
 export const instrumentApi = {
@@ -66,6 +70,13 @@ export const recommendApi = {
   buddies: (userId, params) => api.get(`/recommendations/buddies/${userId}`, { params }),
   instruments: (userId, params) => api.get(`/recommendations/instruments/${userId}`, { params }),
   pieces: (userId) => api.get(`/recommendations/pieces/${userId}`)
+}
+
+export const reportApi = {
+  getTypes: () => api.get('/reports/types'),
+  list: (params) => api.get('/reports', { params }),
+  create: (data) => api.post('/reports', data),
+  updateStatus: (id, status, handlerNote) => api.put(`/reports/${id}/status`, { status, handlerNote })
 }
 
 export default api

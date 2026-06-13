@@ -127,7 +127,8 @@ const loadData = async () => {
         category: filters.category || undefined,
         status: filters.status || undefined,
         keyword: filters.keyword || undefined,
-        ownerId: filters.ownerId || undefined
+        ownerId: filters.ownerId || undefined,
+        currentUserId: userStore.userId || undefined
       })
     }
   } catch (e) {
